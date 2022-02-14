@@ -1,3 +1,7 @@
+// Copyright ©2022 Elastic N.V. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
 // Copyright 2009 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
@@ -100,8 +104,27 @@ type Section struct {
 // Even if the section is stored compressed in the ELF file,
 // Data returns uncompressed data.
 func (s *Section) Data() ([]byte, error) {
+	rs := s.Open()
+	const large = 1 << 30
+	if s.Size > large {
+		_, err := rs.Seek(int64(s.Size)-1, seekStart)
+		if err != nil {
+			return nil, err
+		}
+		_, err = rs.Read([]byte{0})
+		if err != nil {
+			if err == io.EOF {
+				err = io.ErrUnexpectedEOF
+			}
+			return nil, err
+		}
+		_, err = rs.Seek(0, seekStart)
+		if err != nil {
+			return nil, err
+		}
+	}
 	dat := make([]byte, s.Size)
-	n, err := io.ReadFull(s.Open(), dat)
+	n, err := io.ReadFull(rs, dat)
 	return dat[0:n], err
 }
 
@@ -413,6 +436,12 @@ func NewFile(r io.ReaderAt) (*File, error) {
 				Addralign: sh.Addralign,
 				Entsize:   sh.Entsize,
 			}
+		}
+		if int64(s.Offset) < 0 {
+			return nil, &FormatError{off, "invalid section offset", s.Offset}
+		}
+		if int64(s.FileSize) < 0 {
+			return nil, &FormatError{off, "invalid section file size", s.FileSize}
 		}
 		s.sr = io.NewSectionReader(r, int64(s.Offset), int64(s.FileSize))
 

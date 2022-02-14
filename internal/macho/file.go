@@ -1,3 +1,7 @@
+// Copyright ©2022 Elastic N.V. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
 // Copyright 2009 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
@@ -14,6 +18,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"unsafe"
 )
 
 // A File represents an open Mach-O file.
@@ -71,6 +76,11 @@ type Segment struct {
 
 // Data reads and returns the contents of the segment.
 func (s *Segment) Data() ([]byte, error) {
+	// Not directly demonstrated by fuzzing. Identified by parallel with Section.Data fuzzing.
+	err := vetOffsetAndSize(s.sr, 0, s.sr.Size())
+	if err != nil {
+		return nil, err
+	}
 	dat := make([]byte, s.sr.Size())
 	n, err := s.sr.ReadAt(dat, 0)
 	if n == len(dat) {
@@ -124,6 +134,10 @@ type Section struct {
 
 // Data reads and returns the contents of the Mach-O section.
 func (s *Section) Data() ([]byte, error) {
+	err := vetOffsetAndSize(s.sr, 0, s.sr.Size())
+	if err != nil {
+		return nil, err
+	}
 	dat := make([]byte, s.sr.Size())
 	n, err := s.sr.ReadAt(dat, 0)
 	if n == len(dat) {
@@ -260,9 +274,13 @@ func NewFile(r io.ReaderAt) (*File, error) {
 	if _, err := r.ReadAt(dat, offset); err != nil {
 		return nil, err
 	}
-	f.Loads = make([]Load, f.Ncmd)
+
+	const large = 1 << 30
+	if uintptr(f.Ncmd)*unsafe.Sizeof(Load(nil)) <= large {
+		f.Loads = make([]Load, 0, f.Ncmd)
+	}
 	bo := f.ByteOrder
-	for i := range f.Loads {
+	for i := 0; i < int(f.Ncmd); i++ {
 		// Each load command begins with uint32 command and length.
 		if len(dat) < 8 {
 			return nil, &FormatError{offset, "command block too small", nil}
@@ -277,7 +295,7 @@ func NewFile(r io.ReaderAt) (*File, error) {
 		var s *Segment
 		switch cmd {
 		default:
-			f.Loads[i] = LoadBytes(cmddat)
+			f.Loads = append(f.Loads, LoadBytes(cmddat))
 
 		case LoadCmdRpath:
 			var hdr RpathCmd
@@ -291,7 +309,7 @@ func NewFile(r io.ReaderAt) (*File, error) {
 			}
 			l.Path = cstring(cmddat[hdr.Path:])
 			l.LoadBytes = LoadBytes(cmddat)
-			f.Loads[i] = l
+			f.Loads = append(f.Loads, l)
 
 		case LoadCmdDylib:
 			var hdr DylibCmd
@@ -308,7 +326,7 @@ func NewFile(r io.ReaderAt) (*File, error) {
 			l.CurrentVersion = hdr.CurrentVersion
 			l.CompatVersion = hdr.CompatVersion
 			l.LoadBytes = LoadBytes(cmddat)
-			f.Loads[i] = l
+			f.Loads = append(f.Loads, l)
 
 		case LoadCmdSymtab:
 			var hdr SymtabCmd
@@ -326,6 +344,10 @@ func NewFile(r io.ReaderAt) (*File, error) {
 			} else {
 				symsz = 12
 			}
+			err := vetOffsetAndSize(r, int64(hdr.Symoff), int64(hdr.Nsyms)*int64(symsz))
+			if err != nil {
+				return nil, err
+			}
 			symdat := make([]byte, int(hdr.Nsyms)*symsz)
 			if _, err := r.ReadAt(symdat, int64(hdr.Symoff)); err != nil {
 				return nil, err
@@ -334,7 +356,7 @@ func NewFile(r io.ReaderAt) (*File, error) {
 			if err != nil {
 				return nil, err
 			}
-			f.Loads[i] = st
+			f.Loads = append(f.Loads, st)
 			f.Symtab = st
 
 		case LoadCmdDysymtab:
@@ -364,7 +386,7 @@ func NewFile(r io.ReaderAt) (*File, error) {
 			st.LoadBytes = LoadBytes(cmddat)
 			st.DysymtabCmd = hdr
 			st.IndirectSyms = x
-			f.Loads[i] = st
+			f.Loads = append(f.Loads, st)
 			f.Dysymtab = st
 
 		case LoadCmdSegment:
@@ -386,7 +408,7 @@ func NewFile(r io.ReaderAt) (*File, error) {
 			s.Prot = seg32.Prot
 			s.Nsect = seg32.Nsect
 			s.Flag = seg32.Flag
-			f.Loads[i] = s
+			f.Loads = append(f.Loads, s)
 			for i := 0; i < int(s.Nsect); i++ {
 				var sh32 Section32
 				if err := binary.Read(b, bo, &sh32); err != nil {
@@ -426,7 +448,7 @@ func NewFile(r io.ReaderAt) (*File, error) {
 			s.Prot = seg64.Prot
 			s.Nsect = seg64.Nsect
 			s.Flag = seg64.Flag
-			f.Loads[i] = s
+			f.Loads = append(f.Loads, s)
 			for i := 0; i < int(s.Nsect); i++ {
 				var sh64 Section64
 				if err := binary.Read(b, bo, &sh64); err != nil {
@@ -448,6 +470,14 @@ func NewFile(r io.ReaderAt) (*File, error) {
 			}
 		}
 		if s != nil {
+			// Not directly demonstrated by fuzzing. Identified by parallel with ELF fuzzing.
+			if int64(s.Offset) < 0 {
+				return nil, &FormatError{offset, "invalid section offset", s.Offset}
+			}
+			// Not directly demonstrated by fuzzing. Identified by parallel with ELF fuzzing.
+			if int64(s.Filesz) < 0 {
+				return nil, &FormatError{offset, "invalid section file size", s.Filesz}
+			}
 			s.sr = io.NewSectionReader(r, int64(s.Offset), int64(s.Filesz))
 			s.ReaderAt = s.sr
 		}
@@ -457,9 +487,16 @@ func NewFile(r io.ReaderAt) (*File, error) {
 
 func (f *File) parseSymtab(symdat, strtab, cmddat []byte, hdr *SymtabCmd, offset int64) (*Symtab, error) {
 	bo := f.ByteOrder
-	symtab := make([]Symbol, hdr.Nsyms)
+	const large = 1 << 30
+	var symtab []Symbol
+	// Only preallocate if we are a reasonable size, otherwise make sure the
+	// file has the data to back up the claim and wait until the last moment
+	// to allocate each Symbol.
+	if uintptr(hdr.Nsyms)*unsafe.Sizeof(Symbol{}) <= large {
+		symtab = make([]Symbol, 0, hdr.Nsyms)
+	}
 	b := bytes.NewReader(symdat)
-	for i := range symtab {
+	for i := 0; i < int(hdr.Nsyms); i++ {
 		var n Nlist64
 		if f.Magic == Magic64 {
 			if err := binary.Read(b, bo, &n); err != nil {
@@ -476,7 +513,6 @@ func (f *File) parseSymtab(symdat, strtab, cmddat []byte, hdr *SymtabCmd, offset
 			n.Desc = n32.Desc
 			n.Value = uint64(n32.Value)
 		}
-		sym := &symtab[i]
 		if n.Name >= uint32(len(strtab)) {
 			return nil, &FormatError{offset, "invalid name in symbol table", n.Name}
 		}
@@ -485,11 +521,13 @@ func (f *File) parseSymtab(symdat, strtab, cmddat []byte, hdr *SymtabCmd, offset
 		if strings.Contains(name, ".") && name[0] == '_' {
 			name = name[1:]
 		}
-		sym.Name = name
-		sym.Type = n.Type
-		sym.Sect = n.Sect
-		sym.Desc = n.Desc
-		sym.Value = n.Value
+		symtab = append(symtab, Symbol{
+			Name:  name,
+			Type:  n.Type,
+			Sect:  n.Sect,
+			Desc:  n.Desc,
+			Value: n.Value,
+		})
 	}
 	st := new(Symtab)
 	st.LoadBytes = LoadBytes(cmddat)
@@ -508,6 +546,10 @@ func (f *File) pushSection(sh *Section, r io.ReaderAt) error {
 	sh.ReaderAt = sh.sr
 
 	if sh.Nreloc > 0 {
+		err := vetOffsetAndSize(r, int64(sh.Reloff), int64(sh.Nreloc)*8)
+		if err != nil {
+			return err
+		}
 		reldat := make([]byte, int(sh.Nreloc)*8)
 		if _, err := r.ReadAt(reldat, int64(sh.Reloff)); err != nil {
 			return err
@@ -615,4 +657,16 @@ func (f *File) ImportedLibraries() ([]string, error) {
 		}
 	}
 	return all, nil
+}
+
+func vetOffsetAndSize(r io.ReaderAt, off, size int64) error {
+	const large = 1 << 30
+	if size <= large {
+		return nil
+	}
+	_, err := r.ReadAt([]byte{0}, off+size-1)
+	if err == io.EOF {
+		err = io.ErrUnexpectedEOF
+	}
+	return err
 }

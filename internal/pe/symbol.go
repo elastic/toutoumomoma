@@ -1,3 +1,7 @@
+// Copyright ©2022 Elastic N.V. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
 // Copyright 2016 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
@@ -28,6 +32,20 @@ func readCOFFSymbols(fh *FileHeader, r io.ReadSeeker) ([]COFFSymbol, error) {
 	}
 	if fh.NumberOfSymbols <= 0 {
 		return nil, nil
+	}
+	const large = 1 << 30
+	if n := int64(fh.NumberOfSymbols) * COFFSymbolSize; n > large {
+		_, err := r.Seek(n-1, seekStart)
+		if err != nil {
+			return nil, err
+		}
+		_, err = r.Read([]byte{0})
+		if err != nil {
+			if err == io.EOF {
+				err = io.ErrUnexpectedEOF
+			}
+			return nil, err
+		}
 	}
 	_, err := r.Seek(int64(fh.PointerToSymbolTable), seekStart)
 	if err != nil {
