@@ -8,13 +8,11 @@ package elf
 import (
 	"bytes"
 	"compress/zlib"
-	"debug/dwarf"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
 	"os"
-	"strings"
 )
 
 // seekStart, seekCurrent, seekEnd are copies of
@@ -1126,121 +1124,6 @@ func (f *File) applyRelocationsSPARC64(dst []byte, rels []byte) error {
 	}
 
 	return nil
-}
-
-func (f *File) DWARF() (*dwarf.Data, error) {
-	dwarfSuffix := func(s *Section) string {
-		switch {
-		case strings.HasPrefix(s.Name, ".debug_"):
-			return s.Name[7:]
-		case strings.HasPrefix(s.Name, ".zdebug_"):
-			return s.Name[8:]
-		default:
-			return ""
-		}
-
-	}
-	// sectionData gets the data for s, checks its size, and
-	// applies any applicable relations.
-	sectionData := func(i int, s *Section) ([]byte, error) {
-		b, err := s.Data()
-		if err != nil && uint64(len(b)) < s.Size {
-			return nil, err
-		}
-
-		if len(b) >= 12 && string(b[:4]) == "ZLIB" {
-			dlen := binary.BigEndian.Uint64(b[4:12])
-			dbuf := make([]byte, dlen)
-			r, err := zlib.NewReader(bytes.NewBuffer(b[12:]))
-			if err != nil {
-				return nil, err
-			}
-			if _, err := io.ReadFull(r, dbuf); err != nil {
-				return nil, err
-			}
-			if err := r.Close(); err != nil {
-				return nil, err
-			}
-			b = dbuf
-		}
-
-		if f.Type == ET_EXEC {
-			// Do not apply relocations to DWARF sections for ET_EXEC binaries.
-			// Relocations should already be applied, and .rela sections may
-			// contain incorrect data.
-			return b, nil
-		}
-
-		for _, r := range f.Sections {
-			if r.Type != SHT_RELA && r.Type != SHT_REL {
-				continue
-			}
-			if int(r.Info) != i {
-				continue
-			}
-			rd, err := r.Data()
-			if err != nil {
-				return nil, err
-			}
-			err = f.applyRelocations(b, rd)
-			if err != nil {
-				return nil, err
-			}
-		}
-		return b, nil
-	}
-
-	// There are many DWARf sections, but these are the ones
-	// the debug/dwarf package started with.
-	var dat = map[string][]byte{"abbrev": nil, "info": nil, "str": nil, "line": nil, "ranges": nil}
-	for i, s := range f.Sections {
-		suffix := dwarfSuffix(s)
-		if suffix == "" {
-			continue
-		}
-		if _, ok := dat[suffix]; !ok {
-			continue
-		}
-		b, err := sectionData(i, s)
-		if err != nil {
-			return nil, err
-		}
-		dat[suffix] = b
-	}
-
-	d, err := dwarf.New(dat["abbrev"], nil, nil, dat["info"], dat["line"], nil, dat["ranges"], dat["str"])
-	if err != nil {
-		return nil, err
-	}
-
-	// Look for DWARF4 .debug_types sections and DWARF5 sections.
-	for i, s := range f.Sections {
-		suffix := dwarfSuffix(s)
-		if suffix == "" {
-			continue
-		}
-		if _, ok := dat[suffix]; ok {
-			// Already handled.
-			continue
-		}
-
-		b, err := sectionData(i, s)
-		if err != nil {
-			return nil, err
-		}
-
-		if suffix == "types" {
-			if err := d.AddTypes(fmt.Sprintf("types-%d", i), b); err != nil {
-				return nil, err
-			}
-		} else {
-			if err := d.AddSection(".debug_"+suffix, b); err != nil {
-				return nil, err
-			}
-		}
-	}
-
-	return d, nil
 }
 
 // Symbols returns the symbol table for f. The symbols will be listed in the order
