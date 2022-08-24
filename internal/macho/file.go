@@ -9,8 +9,6 @@ package macho
 
 import (
 	"bytes"
-	"compress/zlib"
-	"debug/dwarf"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -587,96 +585,6 @@ func (f *File) Section(name string) *Section {
 		}
 	}
 	return nil
-}
-
-// DWARF returns the DWARF debug information for the Mach-O file.
-func (f *File) DWARF() (*dwarf.Data, error) {
-	dwarfSuffix := func(s *Section) string {
-		switch {
-		case strings.HasPrefix(s.Name, "__debug_"):
-			return s.Name[8:]
-		case strings.HasPrefix(s.Name, "__zdebug_"):
-			return s.Name[9:]
-		default:
-			return ""
-		}
-
-	}
-	sectionData := func(s *Section) ([]byte, error) {
-		b, err := s.Data()
-		if err != nil && uint64(len(b)) < s.Size {
-			return nil, err
-		}
-
-		if len(b) >= 12 && string(b[:4]) == "ZLIB" {
-			dlen := binary.BigEndian.Uint64(b[4:12])
-			dbuf := make([]byte, dlen)
-			r, err := zlib.NewReader(bytes.NewBuffer(b[12:]))
-			if err != nil {
-				return nil, err
-			}
-			if _, err := io.ReadFull(r, dbuf); err != nil {
-				return nil, err
-			}
-			if err := r.Close(); err != nil {
-				return nil, err
-			}
-			b = dbuf
-		}
-		return b, nil
-	}
-
-	// There are many other DWARF sections, but these
-	// are the ones the debug/dwarf package uses.
-	// Don't bother loading others.
-	var dat = map[string][]byte{"abbrev": nil, "info": nil, "str": nil, "line": nil, "ranges": nil}
-	for _, s := range f.Sections {
-		suffix := dwarfSuffix(s)
-		if suffix == "" {
-			continue
-		}
-		if _, ok := dat[suffix]; !ok {
-			continue
-		}
-		b, err := sectionData(s)
-		if err != nil {
-			return nil, err
-		}
-		dat[suffix] = b
-	}
-
-	d, err := dwarf.New(dat["abbrev"], nil, nil, dat["info"], dat["line"], nil, dat["ranges"], dat["str"])
-	if err != nil {
-		return nil, err
-	}
-
-	// Look for DWARF4 .debug_types sections and DWARF5 sections.
-	for i, s := range f.Sections {
-		suffix := dwarfSuffix(s)
-		if suffix == "" {
-			continue
-		}
-		if _, ok := dat[suffix]; ok {
-			// Already handled.
-			continue
-		}
-
-		b, err := sectionData(s)
-		if err != nil {
-			return nil, err
-		}
-
-		if suffix == "types" {
-			err = d.AddTypes(fmt.Sprintf("types-%d", i), b)
-		} else {
-			err = d.AddSection(".debug_"+suffix, b)
-		}
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return d, nil
 }
 
 // ImportedSymbols returns the names of all symbols

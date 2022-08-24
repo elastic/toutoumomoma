@@ -6,16 +6,12 @@ package pe
 
 import (
 	"bytes"
-	"debug/dwarf"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"runtime"
-	"strconv"
 	"testing"
-	"text/template"
 
 	"github.com/elastic/toutoumomoma/internal/testenv"
 )
@@ -316,12 +312,6 @@ func TestOpen(t *testing.T) {
 				t.Errorf("open %s, symbol %d:\n\thave %#v\n\twant %#v\n", tt.file, i, have, want)
 			}
 		}
-		if !tt.hasNoDwarfInfo {
-			_, err = f.DWARF()
-			if err != nil {
-				t.Errorf("fetching %s dwarf details failed: %v", tt.file, err)
-			}
-		}
 	}
 }
 
@@ -349,116 +339,6 @@ func getImageBase(f *File) uintptr {
 	default:
 		panic("unexpected optionalheader type")
 	}
-}
-
-func testDWARF(t *testing.T, linktype int) {
-	if runtime.GOOS != "windows" {
-		t.Skip("skipping windows only test")
-	}
-	testenv.MustHaveGoRun(t)
-
-	tmpdir := t.TempDir()
-
-	src := filepath.Join(tmpdir, "a.go")
-	file, err := os.Create(src)
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = template.Must(template.New("main").Parse(testprog)).Execute(file, linktype != linkNoCgo)
-	if err != nil {
-		if err := file.Close(); err != nil {
-			t.Error(err)
-		}
-		t.Fatal(err)
-	}
-	if err := file.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	exe := filepath.Join(tmpdir, "a.exe")
-	args := []string{"build", "-o", exe}
-	switch linktype {
-	case linkNoCgo:
-	case linkCgoDefault:
-	case linkCgoInternal:
-		args = append(args, "-ldflags", "-linkmode=internal")
-	case linkCgoExternal:
-		args = append(args, "-ldflags", "-linkmode=external")
-	default:
-		t.Fatalf("invalid linktype parameter of %v", linktype)
-	}
-	args = append(args, src)
-	out, err := exec.Command(testenv.GoToolPath(t), args...).CombinedOutput()
-	if err != nil {
-		t.Fatalf("building test executable for linktype %d failed: %s %s", linktype, err, out)
-	}
-	out, err = exec.Command(exe).CombinedOutput()
-	if err != nil {
-		t.Fatalf("running test executable failed: %s %s", err, out)
-	}
-	t.Logf("Testprog output:\n%s", string(out))
-
-	matches := regexp.MustCompile("offset=(.*)\n").FindStringSubmatch(string(out))
-	if len(matches) < 2 {
-		t.Fatalf("unexpected program output: %s", out)
-	}
-	wantoffset, err := strconv.ParseUint(matches[1], 0, 64)
-	if err != nil {
-		t.Fatalf("unexpected main offset %q: %s", matches[1], err)
-	}
-
-	f, err := Open(exe)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer f.Close()
-
-	imageBase := getImageBase(f)
-
-	var foundDebugGDBScriptsSection bool
-	for _, sect := range f.Sections {
-		if sect.Name == ".debug_gdb_scripts" {
-			foundDebugGDBScriptsSection = true
-		}
-	}
-	if !foundDebugGDBScriptsSection {
-		t.Error(".debug_gdb_scripts section is not found")
-	}
-
-	d, err := f.DWARF()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// look for main.main
-	r := d.Reader()
-	for {
-		e, err := r.Next()
-		if err != nil {
-			t.Fatal("r.Next:", err)
-		}
-		if e == nil {
-			break
-		}
-		if e.Tag == dwarf.TagSubprogram {
-			name, ok := e.Val(dwarf.AttrName).(string)
-			if ok && name == "main.main" {
-				t.Logf("Found main.main")
-				addr, ok := e.Val(dwarf.AttrLowpc).(uint64)
-				if !ok {
-					t.Fatal("Failed to get AttrLowpc")
-				}
-				offset := uintptr(addr) - imageBase
-				if offset != uintptr(wantoffset) {
-					t.Fatalf("Runtime offset (0x%x) did "+
-						"not match dwarf offset "+
-						"(0x%x)", wantoffset, offset)
-				}
-				return
-			}
-		}
-	}
-	t.Fatal("main.main not found")
 }
 
 func TestBSSHasZeros(t *testing.T) {
@@ -527,10 +407,6 @@ main(void)
 			t.Fatalf(".bss section has non zero bytes: %v", data)
 		}
 	}
-}
-
-func TestDWARF(t *testing.T) {
-	testDWARF(t, linkNoCgo)
 }
 
 const testprog = `
