@@ -375,12 +375,12 @@ func NewFile(r io.ReaderAt) (*File, error) {
 				Memsz:  ph.Memsz,
 				Align:  ph.Align,
 			}
-			if int64(p.Off) < 0 {
-				return nil, &FormatError{off, "invalid program header offset", p.Off}
-			}
-			if int64(p.Filesz) < 0 {
-				return nil, &FormatError{off, "invalid program header file size", p.Filesz}
-			}
+		}
+		if int64(p.Off) < 0 {
+			return nil, &FormatError{off, "invalid program header offset", p.Off}
+		}
+		if int64(p.Filesz) < 0 {
+			return nil, &FormatError{off, "invalid program header file size", p.Filesz}
 		}
 		p.sr = io.NewSectionReader(r, int64(p.Off), int64(p.Filesz))
 		p.ReaderAt = p.sr
@@ -473,7 +473,16 @@ func NewFile(r io.ReaderAt) (*File, error) {
 	}
 
 	// Load section header string table.
-	shstrtab, err := f.Sections[shstrndx].Data()
+	if shstrndx == 0 {
+		// If the file has no section name string table,
+		// shstrndx holds the value SHN_UNDEF (0).
+		return f, nil
+	}
+	shstr := f.Sections[shstrndx]
+	if shstr.Type != SHT_STRTAB {
+		return nil, &FormatError{shoff + int64(shstrndx*shentsize), "invalid ELF section name string table type", shstr.Type}
+	}
+	shstrtab, err := shstr.Data()
 	if err != nil {
 		return nil, err
 	}
