@@ -130,6 +130,7 @@ func (f *machoFile) sectionStats() ([]Section, error) {
 		s[i] = Section{
 			Name:       sect.Name,
 			Size:       sect.Size,
+			FileSize:   sect.Size,
 			Entropy:    h,
 			VarEntropy: sigma,
 			Flags:      sect.Flags,
