@@ -73,7 +73,7 @@ type Segment struct {
 
 // Data reads and returns the contents of the segment.
 func (s *Segment) Data() ([]byte, error) {
-	return saferio.ReadDataAt(s.sr, uint64(s.sr.Size()), 0)
+	return saferio.ReadDataAt(s.sr, s.Filesz, 0)
 }
 
 // Open returns a new ReadSeeker reading the segment.
@@ -121,7 +121,7 @@ type Section struct {
 
 // Data reads and returns the contents of the Mach-O section.
 func (s *Section) Data() ([]byte, error) {
-	return saferio.ReadDataAt(s.sr, uint64(s.sr.Size()), 0)
+	return saferio.ReadDataAt(s.sr, s.Size, 0)
 }
 
 // Open returns a new ReadSeeker reading the Mach-O section.
@@ -248,17 +248,17 @@ func NewFile(r io.ReaderAt) (*File, error) {
 	if f.Magic == Magic64 {
 		offset = fileHeaderSize64
 	}
-	dat := make([]byte, f.Cmdsz)
-	if _, err := r.ReadAt(dat, offset); err != nil {
+	dat, err := saferio.ReadDataAt(r, uint64(f.Cmdsz), offset)
+	if err != nil {
 		return nil, err
 	}
 	c := saferio.SliceCap([]Load{}, uint64(f.Ncmd))
 	if c < 0 {
-		return nil, &FormatError{offset, "too many loads", nil}
+		return nil, &FormatError{offset, "too many load commands", nil}
 	}
 	f.Loads = make([]Load, 0, c)
 	bo := f.ByteOrder
-	for i := 0; i < int(f.Ncmd); i++ {
+	for i := uint32(0); i < f.Ncmd; i++ {
 		// Each load command begins with uint32 command and length.
 		if len(dat) < 8 {
 			return nil, &FormatError{offset, "command block too small", nil}
@@ -322,7 +322,7 @@ func NewFile(r io.ReaderAt) (*File, error) {
 			} else {
 				symsz = 12
 			}
-			symdat, err := saferio.ReadDataAt(r, uint64(int(hdr.Nsyms)*symsz), int64(hdr.Symoff))
+			symdat, err := saferio.ReadDataAt(r, uint64(hdr.Nsyms)*uint64(symsz), int64(hdr.Symoff))
 			if err != nil {
 				return nil, err
 			}

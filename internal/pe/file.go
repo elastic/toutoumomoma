@@ -136,9 +136,6 @@ func NewFile(r io.ReaderAt) (*File, error) {
 		if err != nil {
 			return nil, err
 		}
-		if sh.VirtualAddress+sh.VirtualSize < sh.VirtualAddress {
-			return nil, fmt.Errorf("section %d end overflows (%d + %d)", i, sh.VirtualAddress, sh.VirtualSize)
-		}
 		s := new(Section)
 		s.SectionHeader = SectionHeader{
 			Name:                 name,
@@ -256,7 +253,10 @@ func (f *File) ImportedSymbols() ([]string, error) {
 	var ds *Section
 	ds = nil
 	for _, s := range f.Sections {
-		if s.VirtualAddress <= idd.VirtualAddress && idd.VirtualAddress < s.VirtualAddress+s.VirtualSize {
+		// We are using distance between s.VirtualAddress and idd.VirtualAddress
+		// to avoid potential overflow of uint32 caused by addition of s.VirtualSize
+		// to s.VirtualAddress.
+		if s.VirtualAddress <= idd.VirtualAddress && idd.VirtualAddress-s.VirtualAddress < s.VirtualSize {
 			ds = s
 			break
 		}
@@ -506,8 +506,8 @@ func readOptionalHeader(r io.ReadSeeker, sz uint16) (any, error) {
 // its size and number of data directories as seen in optional header.
 // It parses the given size of bytes and returns given number of data directories.
 func readDataDirectories(r io.ReadSeeker, sz uint16, n uint32) ([]DataDirectory, error) {
-	ddSz := binary.Size(DataDirectory{})
-	if uint32(sz) != n*uint32(ddSz) {
+	ddSz := uint64(binary.Size(DataDirectory{}))
+	if uint64(sz) != uint64(n)*ddSz {
 		return nil, fmt.Errorf("size of data directories(%d) is inconsistent with number of data directories(%d)", sz, n)
 	}
 
