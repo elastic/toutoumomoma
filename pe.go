@@ -162,6 +162,7 @@ func (f *peFile) sectionStats() ([]Section, error) {
 		s[i] = Section{
 			Name:       sect.Name,
 			Size:       uint64(sect.Size),
+			FileSize:   uint64(sect.Size),
 			Entropy:    h,
 			VarEntropy: sigma,
 			Flags:      sect.Characteristics,

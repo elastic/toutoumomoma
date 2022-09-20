@@ -145,9 +145,15 @@ func (f *elfFile) pclnTable() (*gosym.Table, error) {
 func (f *elfFile) sectionStats() ([]Section, error) {
 	s := make([]Section, len(f.objFile.Sections))
 	for i, sect := range f.objFile.Sections {
-		var h, sigma float64
-		// Don't read sect.Size zero bytes for SHT_NOBITS.
+		var (
+			h, sigma float64
+			fileSize uint64
+		)
+		// Don't read sect.Size zero bytes for SHT_NOBITS,
+		// and don't use written size of section in that case
+		// since it may be lying.
 		if sect.Type != elf.SHT_NOBITS {
+			fileSize = sect.FileSize
 			var err error
 			h, sigma, err = streamEntropy(sect.Open())
 			if err != nil {
@@ -157,6 +163,7 @@ func (f *elfFile) sectionStats() ([]Section, error) {
 		s[i] = Section{
 			Name:       sect.Name,
 			Size:       sect.Size,
+			FileSize:   fileSize,
 			Entropy:    h,
 			VarEntropy: sigma,
 			Flags:      uint32(sect.Flags),

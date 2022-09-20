@@ -239,7 +239,8 @@ func (f *File) Sections() ([]Section, error) {
 // Section holds basic executable section information.
 type Section struct {
 	Name       string  // Name is the platform-specific name of the section.
-	Size       uint64  // Size of the uncompressed size of the section.
+	Size       uint64  // Size of the uncompressed data of the section.
+	FileSize   uint64  // Size of the section data in the file.
 	Entropy    float64 // Entropy is the Shannon entropy of the section data in bits.
 	VarEntropy float64 // VarEntropy is an estimate of the variance of the section entropy.
 	Flags      uint32  // Flags holds platform-specific section flags.
