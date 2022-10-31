@@ -9,5 +9,6 @@
     The `GoSymbolHash` algorithm is analogous to the algorithm described for `ImportHash` with the exception that Go's static symbols are used in place of the dynamic import symbols used by `ImportHash`.
 
     The list of symbols referenced by the executable is obtained and the MD5 hash of the ordered list of symbols, separated by commas, is calculated.
+    The order of the symbols is as exists in the executable and returned by the Go standard library debug packages.
     The fully qualified import path of each symbol is included and while symbols used by `ImportHash` are canonicalised to lowercase, `GoSymbolHash` retains the case of the original symbol. `GoSymbolHash` may be calculated including or excluding standard library imports.
 - `Sections`: provide section size and entropy statistics for an executable.
