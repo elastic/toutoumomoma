@@ -5,4 +5,9 @@
 - `Stripped`: scan files that may be executable and report whether they are a Go executable that has had its symbols stripped.
 - `ImportHash`: calculate the [imphash](https://www.fireeye.com/blog/threat-research/2014/01/tracking-malware-import-hashing.html) of an executable with dynamic imports.
 - `GoSymbolHash`: calculate an imphash analogue for Go executables compiled by the gc-compiler.
-- `Sections`: provide section size statistics for an executable.
+
+    The `GoSymbolHash` algorithm is analogous to the algorithm described for `ImportHash` with the exception that Go's static symbols are used in place of the dynamic import symbols used by `ImportHash`.
+
+    The list of symbols referenced by the executable is obtained and the MD5 hash of the ordered list of symbols, separated by commas, is calculated.
+    The fully qualified import path of each symbol is included and while symbols used by `ImportHash` are canonicalised to lowercase, `GoSymbolHash` retains the case of the original symbol. `GoSymbolHash` may be calculated including or excluding standard library imports.
+- `Sections`: provide section size and entropy statistics for an executable.
