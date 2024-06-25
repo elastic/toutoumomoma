@@ -1,14 +1,16 @@
 module github.com/elastic/toutoumomoma
 
-go 1.18
+go 1.21
 
 require (
 	github.com/kortschak/utter v1.5.0
-	mvdan.cc/garble v0.7.1
+	mvdan.cc/garble v0.12.1
 )
 
 require (
-	golang.org/x/exp v0.0.0-20220602145555-4a0574d9293f // indirect
-	golang.org/x/mod v0.6.0-dev.0.20220419223038-86c51ed26bb4 // indirect
-	golang.org/x/tools v0.1.11-0.20220509190205-b87ceec0dd4d // indirect
+	github.com/bluekeyes/go-gitdiff v0.7.1 // indirect
+	github.com/rogpeppe/go-internal v1.12.0 // indirect
+	golang.org/x/exp v0.0.0-20240205201215-2c58cdc269a3 // indirect
+	golang.org/x/mod v0.15.0 // indirect
+	golang.org/x/tools v0.17.0 // indirect
 )

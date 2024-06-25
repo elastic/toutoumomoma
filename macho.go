@@ -7,10 +7,9 @@ package toutoumomoma
 
 import (
 	"debug/gosym"
+	"debug/macho"
 	"io"
 	"strings"
-
-	"github.com/elastic/toutoumomoma/internal/macho"
 )
 
 type machoFile struct {
@@ -61,16 +60,18 @@ func (f *machoFile) hasRealFiles() (ok bool, err error) {
 	if len(f.objFile.Symtab.Syms) == 0 {
 		return false, nil
 	}
+	foundMain := false
 	for _, sym := range f.objFile.Symtab.Syms {
 		if sym.Name != "main.main" {
 			continue
 		}
-		file, _, _ := tab.PCToLine(sym.Value)
-		if file == "??" {
+		foundMain = true
+		file, _, fn := tab.PCToLine(sym.Value)
+		if file == "??" || fn == nil {
 			return false, nil
 		}
 	}
-	return true, nil
+	return foundMain, nil
 }
 
 func (f *machoFile) importedSymbols() ([]string, error) {

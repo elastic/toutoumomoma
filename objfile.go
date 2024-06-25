@@ -12,9 +12,8 @@
 package toutoumomoma
 
 import (
+	"debug/pe"
 	"fmt"
-
-	"github.com/elastic/toutoumomoma/internal/pe"
 )
 
 // ELF PC to line preparation function.

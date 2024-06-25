@@ -8,12 +8,11 @@ package toutoumomoma
 import (
 	"bytes"
 	"debug/gosym"
+	"debug/pe"
 	"fmt"
 	"io"
 	"path"
 	"strings"
-
-	"github.com/elastic/toutoumomoma/internal/pe"
 )
 
 type peFile struct {
@@ -53,7 +52,7 @@ func (f *peFile) isGoExecutable() (ok bool, err error) {
 
 func (f *peFile) hasBuildID() (ok bool, err error) {
 	for _, s := range f.objFile.Symbols {
-		if s.Name == "go.buildid" {
+		if s.Name == "go.buildid" || s.Name == "go:buildid" {
 			return true, nil
 		}
 	}
