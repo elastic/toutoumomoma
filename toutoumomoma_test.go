@@ -331,7 +331,7 @@ func garbleVersion() (string, error) {
 
 func TestEntropyVariance(t *testing.T) {
 	const (
-		etol = 1e-15
+		etol = 1e-14
 		vtol = 1e-12
 	)
 

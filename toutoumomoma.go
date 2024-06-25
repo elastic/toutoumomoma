@@ -160,19 +160,22 @@ func (f *File) Stripped() (sneaky bool, err error) {
 // symbols, separated by commas, is calculated.
 //
 // Darwin:
-//  ___error
-//  __exit
-//  _clock_gettime
+//
+//	___error
+//	__exit
+//	_clock_gettime
 //
 // Linux:
-//  libc.so.6.free
-//  .agwrite
-//  libc.so.6.puts
+//
+//	libc.so.6.free
+//	.agwrite
+//	libc.so.6.puts
 //
 // Windows:
-//  kernel32.writefile
-//  kernel32.writeconsolew
-//  kernel32.waitformultipleobjects
+//
+//	kernel32.writefile
+//	kernel32.writeconsolew
+//	kernel32.waitformultipleobjects
 func (f *File) ImportHash() (hash []byte, imports []string, err error) {
 	// Algorithm from https://www.fireeye.com/blog/threat-research/2014/01/tracking-malware-import-hashing.html
 	//  - Resolving ordinals to function names when they appear (done by the debug/pe library)

@@ -6,11 +6,10 @@
 package toutoumomoma
 
 import (
+	"debug/elf"
 	"debug/gosym"
 	"io"
 	"strings"
-
-	"github.com/elastic/toutoumomoma/internal/elf"
 )
 
 type elfFile struct {
