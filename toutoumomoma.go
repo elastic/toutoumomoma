@@ -7,10 +7,8 @@ package toutoumomoma
 
 import (
 	"bytes"
-	"crypto/md5"
 	"debug/gosym"
 	"errors"
-	"fmt"
 	"io"
 	"math"
 	"os"
@@ -23,6 +21,9 @@ var (
 
 	// ErrNotGoExecutable indicates a file was not a Go executable.
 	ErrNotGoExecutable = errors.New("not a Go executable")
+
+	// ErrNotSupported indicates the information is not supported by the runtime
+	ErrNotSupported = errors.New("not supported")
 )
 
 // File holds an executable object file.
@@ -177,31 +178,12 @@ func (f *File) Stripped() (sneaky bool, err error) {
 //	kernel32.writeconsolew
 //	kernel32.waitformultipleobjects
 func (f *File) ImportHash() (hash []byte, imports []string, err error) {
-	// Algorithm from https://www.fireeye.com/blog/threat-research/2014/01/tracking-malware-import-hashing.html
-	//  - Resolving ordinals to function names when they appear (done by the debug/pe library)
-	//  - Converting both DLL names and function names to all lowercase
-	//  - Removing the file extensions from imported module names
-	//  - Building and storing the lowercased string in an ordered list
-	//  - Generating the MD5 hash of the ordered list
-	//
-	// The algorithm is generalised to non-Windows platforms as described in
-	// the doc comment.
+	return f.importHash()
+}
 
-	imports, err = f.importedSymbols()
-	if err != nil {
-		return nil, nil, err
-	}
-	h := md5.New()
-	if len(imports) == 0 {
-		return h.Sum(nil), nil, nil
-	}
-	for i, imp := range imports {
-		if i != 0 {
-			_, _ = h.Write([]byte{','})
-		}
-		fmt.Fprint(h, imp)
-	}
-	return h.Sum(nil), imports, nil
+// Imports returns the list of dynamic imports in the executable examined.
+func (f *File) Imports() (imports []string, err error) {
+	return f.importedSymbols()
 }
 
 // GoSymbolHash returns the symbol hash of a Go executable and the list of symbols
@@ -221,29 +203,11 @@ func (f *File) ImportHash() (hash []byte, imports []string, err error) {
 // If the file is an executable, but not a gc-compiled Go executable, ErrNotGoExecutable
 // will be returned.
 func (f *File) GoSymbolHash(stdlib bool) (hash []byte, imports []string, err error) {
-	ok, err := f.isGoExecutable()
-	if !ok || err != nil {
-		if err != nil {
-			return nil, nil, err
-		}
-		return nil, nil, ErrNotGoExecutable
-	}
+	return f.goSymbolHash(stdlib)
+}
 
-	imports, err = f.goSymbols(stdlib)
-	if err != nil {
-		return nil, nil, err
-	}
-	h := md5.New()
-	if len(imports) == 0 {
-		return h.Sum(nil), nil, nil
-	}
-	for i, imp := range imports {
-		if i != 0 {
-			_, _ = h.Write([]byte{','})
-		}
-		fmt.Fprint(h, imp)
-	}
-	return h.Sum(nil), imports, nil
+func (f *File) GoSymbols(stdlib bool) (imports []string, err error) {
+	return f.goSymbols(stdlib)
 }
 
 // Sections returns the names and sizes of object file sections in the order
