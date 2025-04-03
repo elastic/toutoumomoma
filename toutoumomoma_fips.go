@@ -7,12 +7,15 @@
 
 package toutoumomoma
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
 
 func (f *File) importHash() (hash []byte, imports []string, err error) {
-	return nil, nil, fmt.Errorf("cannot generate md5 in fips mode: %w", ErrNotSupported)
+	return nil, nil, fmt.Errorf("cannot generate md5 in fips mode: %w", errors.ErrUnsupported)
 }
 
 func (f *File) goSymbolHash(stdlib bool) (hash []byte, imports []string, err error) {
-	return nil, nil, fmt.Errorf("cannot generate md5 in fips mode: %w", ErrNotSupported)
+	return nil, nil, fmt.Errorf("cannot generate md5 in fips mode: %w", errors.ErrUnsupported)
 }
