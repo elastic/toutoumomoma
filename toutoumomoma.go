@@ -21,9 +21,6 @@ var (
 
 	// ErrNotGoExecutable indicates a file was not a Go executable.
 	ErrNotGoExecutable = errors.New("not a Go executable")
-
-	// ErrNotSupported indicates the information is not supported by the runtime
-	ErrNotSupported = errors.New("not supported")
 )
 
 // File holds an executable object file.
