@@ -31,3 +31,6 @@ jobs:
 
     - name: Test Race
       run: go test -race ./...
+
+    - name: Test FIPS
+      run: go test -tags requirefips ./...
