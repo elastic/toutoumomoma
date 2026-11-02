@@ -203,7 +203,21 @@ func (f *File) GoSymbolHash(stdlib bool) (hash []byte, imports []string, err err
 	return f.goSymbolHash(stdlib)
 }
 
+// GoSymbols returns the list of symbols in a Go executable. If stdlib is true,
+// symbols from the Go standard library are included, otherwise only third-party
+// symbols are returned. The symbols are those used by GoSymbolHash to calculate
+// the symbol hash.
+//
+// If the file is an executable, but not a gc-compiled Go executable, ErrNotGoExecutable
+// will be returned.
 func (f *File) GoSymbols(stdlib bool) (imports []string, err error) {
+	ok, err := f.isGoExecutable()
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, ErrNotGoExecutable
+	}
 	return f.goSymbols(stdlib)
 }
 
@@ -243,6 +257,16 @@ func ImportHash(path string) (hash []byte, imports []string, err error) {
 	return f.ImportHash()
 }
 
+// Imports is a convenience wrapper around File.Imports.
+func Imports(path string) (imports []string, err error) {
+	f, err := Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return f.Imports()
+}
+
 // GoSymbolHash is a convenience wrapper around File.GoSymbolHash.
 func GoSymbolHash(path string, stdlib bool) (hash []byte, imports []string, err error) {
 	f, err := Open(path)
@@ -251,6 +275,16 @@ func GoSymbolHash(path string, stdlib bool) (hash []byte, imports []string, err 
 	}
 	defer f.Close()
 	return f.GoSymbolHash(stdlib)
+}
+
+// GoSymbols is a convenience wrapper around File.GoSymbols.
+func GoSymbols(path string, stdlib bool) (imports []string, err error) {
+	f, err := Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return f.GoSymbols(stdlib)
 }
 
 // Sections is a convenience wrapper around File.Sections.
