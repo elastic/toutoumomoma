@@ -57,6 +57,10 @@ func (f *elfFile) hasRealFiles() (ok bool, err error) {
 	if err != nil {
 		return false, err
 	}
+	if tab == nil {
+		// No line table, so no files can be found.
+		return false, nil
+	}
 	symbols, err := f.objFile.Symbols()
 	if err != nil {
 		if err == elf.ErrNoSymbols {

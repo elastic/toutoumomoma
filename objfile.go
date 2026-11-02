@@ -69,10 +69,10 @@ func (f *peFile) pcln() (textStart uint64, symtab, pclntab []byte, err error) {
 	if pclntab, err = loadPETable(f.objFile, "runtime.pclntab", "runtime.epclntab"); err != nil {
 		return 0, nil, nil, err
 	}
-	if symtab, err = loadPETable(f.objFile, "runtime.symtab", "runtime.esymtab"); err != nil {
-		return 0, nil, nil, err
-	}
-	return textStart, symtab, pclntab, nil
+	// The runtime.symtab table has been empty since Go 1.3, and the
+	// runtime.symtab and runtime.esymtab symbols are not emitted from
+	// Go 1.26, so the symbol table is not loaded.
+	return textStart, nil, pclntab, nil
 }
 
 func loadPETable(f *pe.File, sname, ename string) ([]byte, error) {

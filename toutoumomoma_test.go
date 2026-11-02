@@ -7,14 +7,18 @@ package toutoumomoma
 
 import (
 	"bytes"
+	"debug/elf"
+	"debug/macho"
 	"errors"
 	"flag"
 	"fmt"
 	"go/format"
+	"io"
 	"math"
 	"math/rand"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"reflect"
 	"runtime"
 	"slices"
@@ -359,6 +363,93 @@ func TestGoSymbolsNotGo(t *testing.T) {
 	}
 }
 
+// TestStrippedNoLineTable checks that Stripped does not panic when the line
+// table of an ELF or Mach-O executable cannot be read. This is the only way
+// that these formats produce a nil line table. The corresponding PE case,
+// a missing pclntab symbol, is covered by the Stripped subtests of
+// TestToutoumomoma.
+func TestStrippedNoLineTable(t *testing.T) {
+	tests := []struct {
+		goos         string
+		sectionRange func(path string) (off, size int64, err error)
+	}{
+		{goos: "linux", sectionRange: func(path string) (off, size int64, err error) {
+			f, err := elf.Open(path)
+			if err != nil {
+				return 0, 0, err
+			}
+			defer f.Close()
+			s := f.Section(".gopclntab")
+			if s == nil {
+				return 0, 0, errors.New("no .gopclntab section")
+			}
+			return int64(s.Offset), int64(s.FileSize), nil
+		}},
+		{goos: "darwin", sectionRange: func(path string) (off, size int64, err error) {
+			f, err := macho.Open(path)
+			if err != nil {
+				return 0, 0, err
+			}
+			defer f.Close()
+			s := f.Section("__gopclntab")
+			if s == nil {
+				return 0, 0, errors.New("no __gopclntab section")
+			}
+			return int64(s.Offset), int64(s.Size), nil
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.goos, func(t *testing.T) {
+			target := filepath.Join(t.TempDir(), "executable")
+			cmd, err := build(test.goos, "go", "./testdata", target, nil)
+			if err != nil {
+				t.Fatalf("failed to build test for GOOS=%s %s: %v", test.goos, cmd, err)
+			}
+			off, size, err := test.sectionRange(target)
+			if err != nil {
+				t.Fatalf("failed to find line table for GOOS=%s: %v", test.goos, err)
+			}
+			if size == 0 {
+				t.Fatalf("empty line table for GOOS=%s", test.goos)
+			}
+			f, err := os.Open(target)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer f.Close()
+
+			exe, err := NewFile(failRangeReader{r: f, off: off, end: off + size})
+			if err != nil {
+				t.Fatalf("unexpected error opening executable for GOOS=%s: %v", test.goos, err)
+			}
+
+			// With no line table there are no real files, so the executable
+			// is reported as stripped.
+			got, err := exe.Stripped()
+			if err != nil {
+				t.Errorf("unexpected error from Stripped for GOOS=%s: %v", test.goos, err)
+			}
+			if !got {
+				t.Errorf("unexpected result from Stripped for GOOS=%s: got:%t want:true", test.goos, got)
+			}
+		})
+	}
+}
+
+// failRangeReader is an io.ReaderAt that fails reads that overlap the byte
+// range [off, end).
+type failRangeReader struct {
+	r        io.ReaderAt
+	off, end int64
+}
+
+func (r failRangeReader) ReadAt(p []byte, off int64) (int, error) {
+	if off < r.end && off+int64(len(p)) > r.off {
+		return 0, errors.New("injected read failure")
+	}
+	return r.r.ReadAt(p, off)
+}
+
 // stubFile is a file that reports whether it is a Go executable. Its
 // goSymbols method returns a non-nil result so that a test can detect it
 // being called. Other file methods are not implemented and will panic.
@@ -382,9 +473,18 @@ func hasMain(sym []string) bool {
 	return false
 }
 
+// buildIDSections is the set of sections that hold build IDs. The content of
+// these sections is a hash that changes with any change to the build, so
+// their entropy statistics vary from build to build, and are not compared.
+var buildIDSections = map[string]bool{
+	".note.go.buildid":   true,
+	".note.gnu.build-id": true,
+}
+
 // similarSections returns whether a and b a similar. For this comparison
 // similarity is defined as have the same set of sections and corresponding
-// sections having the same zero-size status.
+// sections having the same zero-size status. The entropy of build ID
+// sections is not compared.
 func similarSections(a, b []Section, tol float64) (wrong int, ok bool) {
 	if len(a) != len(b) {
 		return -1, false
@@ -396,17 +496,74 @@ func similarSections(a, b []Section, tol float64) (wrong int, ok bool) {
 		if (s.Size == 0) != (b[i].Size == 0) {
 			return i, false
 		}
-		if math.Abs(s.Entropy-b[i].Entropy) > tol {
-			return i, false
-		}
-		if math.Abs(s.VarEntropy-b[i].VarEntropy) > tol/100 {
-			return i, false
+		if !buildIDSections[s.Name] {
+			if math.Abs(s.Entropy-b[i].Entropy) > tol {
+				return i, false
+			}
+			if math.Abs(s.VarEntropy-b[i].VarEntropy) > tol/100 {
+				return i, false
+			}
 		}
 		if s.Flags != b[i].Flags {
 			return i, false
 		}
 	}
 	return 0, true
+}
+
+func TestSimilarSections(t *testing.T) {
+	const tol = 0.5
+	// The values for the build ID section are from builds of the same
+	// program that differ only in their build ID.
+	gnuID := Section{Name: ".note.gnu.build-id", Size: 36, FileSize: 36, Entropy: 4.0249, VarEntropy: 0.0549, Flags: 2}
+	gnuIDOther := Section{Name: ".note.gnu.build-id", Size: 36, FileSize: 36, Entropy: 4.2472, VarEntropy: 0.0615, Flags: 2}
+	text := Section{Name: ".text", Size: 1000, FileSize: 1000, Entropy: 6.2, VarEntropy: 0.0001, Flags: 6}
+
+	// with returns a copy of s modified by f.
+	with := func(s Section, f func(*Section)) Section {
+		f(&s)
+		return s
+	}
+
+	tests := []struct {
+		name string
+		a, b []Section
+		want bool
+	}{
+		{name: "same", a: []Section{gnuID, text}, b: []Section{gnuID, text}, want: true},
+		{name: "build_id_entropy_differs", a: []Section{gnuID, text}, b: []Section{gnuIDOther, text}, want: true},
+		{
+			name: "text_var_entropy_differs",
+			a:    []Section{gnuID, text},
+			b:    []Section{gnuID, with(text, func(s *Section) { s.VarEntropy += 0.01 })},
+			want: false,
+		},
+		{
+			name: "text_entropy_differs",
+			a:    []Section{gnuID, text},
+			b:    []Section{gnuID, with(text, func(s *Section) { s.Entropy += 1 })},
+			want: false,
+		},
+		{
+			name: "build_id_flags_differ",
+			a:    []Section{gnuID, text},
+			b:    []Section{with(gnuID, func(s *Section) { s.Flags = 3 }), text},
+			want: false,
+		},
+		{
+			name: "build_id_emptied",
+			a:    []Section{gnuID, text},
+			b:    []Section{with(gnuID, func(s *Section) { s.Size = 0 }), text},
+			want: false,
+		},
+		{name: "section_missing", a: []Section{gnuID, text}, b: []Section{gnuID}, want: false},
+	}
+	for _, test := range tests {
+		_, got := similarSections(test.a, test.b, tol)
+		if got != test.want {
+			t.Errorf("unexpected result for %s: got:%t want:%t", test.name, got, test.want)
+		}
+	}
 }
 
 func build(goos, builder, path, target string, flags []string) (*exec.Cmd, error) {

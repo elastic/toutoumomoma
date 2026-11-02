@@ -57,6 +57,10 @@ func (f *machoFile) hasRealFiles() (ok bool, err error) {
 	if err != nil {
 		return false, err
 	}
+	if tab == nil {
+		// No line table, so no files can be found.
+		return false, nil
+	}
 	if len(f.objFile.Symtab.Syms) == 0 {
 		return false, nil
 	}
