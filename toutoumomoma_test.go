@@ -583,7 +583,7 @@ func garbleVersion() (string, error) {
 	}
 	v := strings.TrimSpace(buf.String())
 	if v == "(devel)" {
-		return "", errors.New("cannot run tests with development garble: run go install mvdan.cc/garble@latest")
+		return "", errors.New("cannot run tests with development garble: run go install -C tools mvdan.cc/garble")
 	}
 	return v, nil
 }
