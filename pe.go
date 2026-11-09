@@ -64,6 +64,10 @@ func (f *peFile) hasRealFiles() (ok bool, err error) {
 	if err != nil {
 		return false, err
 	}
+	if tab == nil {
+		// No line table, so no files can be found.
+		return false, nil
+	}
 	if len(f.objFile.Symbols) == 0 {
 		return false, nil
 	}

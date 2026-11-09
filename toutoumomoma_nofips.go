@@ -26,42 +26,31 @@ func (f *File) importHash() (hash []byte, imports []string, err error) {
 	if err != nil {
 		return nil, nil, err
 	}
-
-	h := md5.New()
-	if len(imports) == 0 {
-		return h.Sum(nil), nil, nil
-	}
-	for i, imp := range imports {
-		if i != 0 {
-			_, _ = h.Write([]byte{','})
-		}
-		fmt.Fprint(h, imp)
-	}
-	return h.Sum(nil), imports, nil
+	hash, imports = symbolHash(imports)
+	return hash, imports, nil
 }
 
 func (f *File) goSymbolHash(stdlib bool) (hash []byte, imports []string, err error) {
-	ok, err := f.isGoExecutable()
-	if !ok || err != nil {
-		if err != nil {
-			return nil, nil, err
-		}
-		return nil, nil, ErrNotGoExecutable
-	}
-
-	imports, err = f.goSymbols(stdlib)
+	imports, err = f.GoSymbols(stdlib)
 	if err != nil {
 		return nil, nil, err
 	}
+	hash, imports = symbolHash(imports)
+	return hash, imports, nil
+}
+
+// symbolHash returns the MD5 hash of the comma-separated symbols, and the
+// symbols, or nil if there are none.
+func symbolHash(symbols []string) ([]byte, []string) {
 	h := md5.New()
-	if len(imports) == 0 {
-		return h.Sum(nil), nil, nil
+	if len(symbols) == 0 {
+		return h.Sum(nil), nil
 	}
-	for i, imp := range imports {
+	for i, s := range symbols {
 		if i != 0 {
 			_, _ = h.Write([]byte{','})
 		}
-		fmt.Fprint(h, imp)
+		fmt.Fprint(h, s)
 	}
-	return h.Sum(nil), imports, nil
+	return h.Sum(nil), symbols
 }
